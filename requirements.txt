@@ -1,0 +1,9 @@
+# No third-party Python packages are required.
+#
+# - The orchestrator (automate_stimuli.py) and scripts/fetch_cc0_textures.py use
+#   only the Python 3.9+ standard library.
+# - render_stimuli.py and generate_shapes.py run inside Blender's bundled Python
+#   (bpy), launched via run_blender.sh, so they need no pip install.
+#
+# External requirements (not pip):
+#   * Blender 4.5   (headless; see README "Prerequisites")
