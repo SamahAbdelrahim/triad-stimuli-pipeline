@@ -1,6 +1,6 @@
 # triad-stimuli-pipeline
 
-A self-contained pipeline for generating **2AFC cue-conflict triad stimuli** for
+A self-contained pipeline for generating **2AFC triad stimuli** for
 shape-bias / word-extension benchmarks. Given a set of 3D shapes and a texture
 library, it renders, for every object, a benchmark-ready package:
 
@@ -133,3 +133,10 @@ Rules for a set to be usable by the engine:
   long run — prefer a GPU box / cluster; tune `--res`/`--samples` for previews.
 - `data/generated_stimuli/` is git-ignored; commit only inputs + code.
 - Large 4K texture packs are heavy for git — prefer Git LFS or re-fetching them.
+
+## License and attribution
+
+- **Code and pipeline scripts:** MIT — see [`LICENSE`](LICENSE).
+- **Bundled textures** (`data/texture_library/`): [ambientCG](https://ambientcg.com/)
+  materials under **CC0 1.0** — see [`data/texture_library/ATTRIBUTION.md`](data/texture_library/ATTRIBUTION.md)
+  for the full asset list and notes on the optional Shape Generator add-on.
