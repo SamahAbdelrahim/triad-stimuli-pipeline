@@ -24,12 +24,21 @@ Two texture "modes" are supported:
 Everything is deterministic: the material for an object is a hash of its STL
 path, so re-running reproduces identical stimuli.
 
+There are two entry points. `automate_stimuli.py` gives each shape one texture,
+which is the right shape of output when the shape pool is what you are growing.
+[`expand_stimuli.py`](#expanded-stimuli-every-texture-on-every-shape) instead
+puts *every* texture on *every* shape, which multiplies a fixed shape set into
+far more trials; `example_image.png` there is the photograph of the real object
+rather than a copy of `reference.png`.
+
 ## Repository layout
 
 ```
 triad-stimuli-pipeline/
-├── automate_stimuli.py          # one-command orchestrator (plain python3)
+├── automate_stimuli.py          # one-command orchestrator: one texture per shape
+├── expand_stimuli.py            # orchestrator: every texture on every shape
 ├── render_stimuli.py            # Blender: renders triad packages  (bpy)
+├── render_texture_grid.py       # Blender: renders the shape x texture grid (bpy)
 ├── generate_shapes.py           # Blender: optional shape generation via add-on (bpy)
 ├── run_blender.sh               # locates + launches the bundled/system Blender
 ├── requirements.txt
@@ -40,7 +49,8 @@ triad-stimuli-pipeline/
 │   └── install_libxkbcommon_user.sh     # Linux-only Blender lib helper (no sudo)
 └── data/
     ├── shapes/                  # bundled STL pool (540 procedural shapes)
-    ├── texture_library/         # bundled CC0 PBR sets (fabric/leather + metal/steel)
+    ├── alice/                   # fixed 30-object ALICE set: stl/ + images/
+    ├── texture_library/         # bundled CC0 PBR sets (38, fabric/leather + metal/steel)
     └── generated_stimuli/       # OUTPUT (git-ignored): base/, distractors/, packages
 ```
 
@@ -80,6 +90,62 @@ Point stimuli at a downstream benchmark repo with `--sync-to`:
 python3 automate_stimuli.py --n 200 --sync-to /path/to/benchmark/stimuli_per_stl_packages
 ```
 
+## Expanded stimuli: every texture on every shape
+
+`automate_stimuli.py` gives each shape a single hash-picked texture, so 30 shapes
+means 30 trials per mode. `expand_stimuli.py` instead crosses the whole texture
+library with the whole shape set, giving each shape one package per texture:
+
+```bash
+python3 expand_stimuli.py --stages plan          # inventory + trial count, no rendering
+python3 expand_stimuli.py --res 1024 --samples 128
+```
+
+With the bundled 38 textures and the 30-object ALICE set in `data/alice/`, that
+is **1140 trials per mode per version** instead of 30. Output keeps the folder
+names `shapebias-bench-2` already loads, with the texture as one extra level:
+
+```
+stimuli_unique_texture_per_stl_v1/
+├── stimuli_B_controlled_simple/
+│   ├── 1/
+│   │   ├── Carpet008_1K-JPG/{example_image,reference,shape_match,texture_match}.png
+│   │   └── ... one folder per texture ...
+│   ├── 2/ ...
+│   └── manifest.csv
+├── stimuli_A_auto_contrast/ ...
+└── combined_benchmark_manifest.csv
+```
+
+Each package obeys the usual rules: `reference` and `texture_match` share one
+material and differ only in shape, `shape_match` keeps the shape and swaps the
+texture, and `example_image` is the photograph of the real object.
+
+Two things make this cheap. Every image comes from a single
+(mode x shape x texture) render grid, so a package costs no renders of its own
+and is placed as a hardlink — 38x30x2 = 2280 renders back the whole set, and the
+packages add almost nothing on disk. And `v1` and `v2` are assembled from that
+same grid, differing only in which texture `shape_match` gets and which shape
+`texture_match` gets, so the second version is free.
+
+The grid is resumable: cells already on disk are skipped, so an interrupted run
+picks up where it stopped, and the work shards across machines with
+`--only-stems`. Budget roughly 45 s per cell at `--res 1024 --samples 128` on a
+CPU-only box (about 28 h for the full grid); `--res 512 --samples 64` is far
+faster for pilots.
+
+```
+--stages          comma subset of: plan,grid,assemble,manifest,sync
+--modes           render modes to build (default both)
+--versions        v1,v2 (or the full package names)
+--only-stems      restrict to some STL ids, e.g. 1,2,3
+--max-textures N  use only the first N texture sets (smoke tests)
+--res / --samples render resolution / Cycles samples
+--link-mode       hardlink (default) | copy | symlink
+--overwrite       re-render grid cells that already exist
+--sync-to DIR     also mirror the version trees into a benchmark repo
+```
+
 ## Where the shapes come from
 
 - **Bundled pool (default):** `data/shapes/` ships 540 procedurally generated
@@ -97,7 +163,9 @@ python3 automate_stimuli.py --n 200 --sync-to /path/to/benchmark/stimuli_per_stl
 
 ## Expanding the texture library
 
-The bundled library covers both modes. To add more CC0 PBR sets from ambientCG:
+The bundled library covers both modes. Every set you add is one more trial per
+shape per mode in `expand_stimuli.py`, so growing the library is the cheapest way
+to grow the expanded stimulus set. To add more CC0 PBR sets from ambientCG:
 ```bash
 python3 scripts/fetch_cc0_textures.py --res 1K            # curated default list
 python3 scripts/fetch_cc0_textures.py --only Fabric055 Metal017

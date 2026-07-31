@@ -16,29 +16,20 @@ is still appreciated and is recorded here for provenance.
 
 ## Bundled sets (1K JPG packs)
 
-| Folder | ambientCG asset ID |
-|--------|--------------------|
-| Carpet013_1K-JPG | Carpet013 |
-| Carpet014_1K-JPG | Carpet014 |
-| CorrugatedSteel005_1K-JPG | CorrugatedSteel005 |
-| Fabric001_1K-JPG | Fabric001 |
-| Fabric012_1K-JPG | Fabric012 |
-| Fabric030_1K-JPG | Fabric030 |
-| Fabric045_1K-JPG | Fabric045 |
-| Fabric046_1K-JPG | Fabric046 |
-| Fabric062_1K-JPG | Fabric062 |
-| Fabric070_1K-JPG | Fabric070 |
-| Leather011_1K-JPG | Leather011 |
-| Leather028_1K-JPG | Leather028 |
-| Metal006_1K-JPG | Metal006 |
-| Metal032_1K-JPG | Metal032 |
-| MetalPlates006_1K-JPG | MetalPlates006 |
-| MetalPlates013_1K-JPG | MetalPlates013 |
-| PaintedMetal004_1K-JPG | PaintedMetal004 |
-| PaintedMetal008_1K-JPG | PaintedMetal008 |
-| Rust004_1K-JPG | Rust004 |
-| Rust006_1K-JPG | Rust006 |
-| SheetMetal001_1K-JPG | SheetMetal001 |
+Every folder is `<ambientCG asset ID>_1K-JPG`, so the asset ID is the folder name
+with the `_1K-JPG` suffix removed.
+
+Soft / cloth: Carpet008, Carpet013, Carpet014, Fabric001, Fabric002, Fabric004,
+Fabric005, Fabric012, Fabric020, Fabric030, Fabric031, Fabric045, Fabric046,
+Fabric047, Fabric062, Fabric070, Leather008, Leather010, Leather011, Leather028.
+
+Hard / metallic / mineral: CorrugatedSteel005, CorrugatedSteel007B, Ground054,
+Metal006, Metal007, Metal009, Metal022, Metal032, MetalPlates006, MetalPlates013,
+PaintedMetal004, PaintedMetal005, PaintedMetal007, PaintedMetal008, Rust004,
+Rust006, Rust008, SheetMetal001.
+
+That is 38 sets. `expand_stimuli.py` crosses all of them with every shape, so
+adding a set here grows the expanded stimulus set by one trial per shape per mode.
 
 Additional sets fetched later via `scripts/fetch_cc0_textures.py` are also
 ambientCG CC0 materials unless noted otherwise in that set's folder.
