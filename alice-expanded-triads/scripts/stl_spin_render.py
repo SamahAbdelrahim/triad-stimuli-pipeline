@@ -1,5 +1,6 @@
 """
-Shared STL → rotating MP4 pipeline (Blender/bpy). Imported by entrypoint scripts at repo root.
+Shared STL → rotating MP4 pipeline (Blender/bpy). Imported by entrypoint scripts
+in the project folder.
 """
 import bpy
 import os

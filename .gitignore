@@ -1,9 +1,9 @@
 # Rendered outputs (regenerable)
-data/generated_stimuli/
+alice-expanded-triads/data/generated_stimuli/
 
 # Bundled Blender / archives (download separately; too large for git)
 # Matches both a real dir and a local convenience symlink.
-blender-*
+alice-expanded-triads/blender-*
 *.zip
 transcripts/
 

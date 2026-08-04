@@ -20,7 +20,7 @@ Examples:
 
   # Also sync into the benchmark repo:
   python3 automate_stimuli.py --n 200 --sync-to \
-      "../../shapebias-bench-2/stimuli_pipe/stimuli_per_stl_packages"
+      "../../shapebias-bench2/stimuli_pipe/stimuli_per_stl_packages"
 """
 
 from __future__ import annotations

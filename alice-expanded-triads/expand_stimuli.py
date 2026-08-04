@@ -49,7 +49,7 @@ Examples:
 
   # full build, then mirror into the benchmark repo
   python3 expand_stimuli.py --res 1024 --samples 128 \
-      --sync-to ../shapebias-bench-2/stimuli_pipe
+      --sync-to ../../shapebias-bench2/stimuli_pipe
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ DEFAULT_OUT = PROJECT / "data" / "generated_stimuli"
 GRID_DIRNAME = "texture_grid"
 
 # Output folder name -> render-engine mode name. The folder names are fixed by
-# what shapebias-bench-2 already loads.
+# what shapebias-bench2 already loads.
 STIM_SETS = {
     "stimuli_B_controlled_simple": "B_controlled_simple",
     "stimuli_A_auto_contrast": "A_auto_contrast",
