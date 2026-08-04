@@ -5,15 +5,24 @@ cd /home/samah/projects/triad-stimuli-pipeline
 python3 automate_stimuli.py --n 5 --modes B_controlled_simple --res 384 --samples 24
 # full run
 python3 automate_stimuli.py --n 200 --modes B_controlled_simple,A_auto_contrast --res 1024 --samples 128
+# match each render to a photograph of the object (shapes must be named <stem>.stl / <stem>.PNG)
+STIM_REFERENCE_IMAGE_DIR=data/alice/images python3 automate_stimuli.py --source data/alice/stl --n 30
 
 # --- every texture on every shape (expand_stimuli.py) ---
 # inventory + trial count, nothing rendered
 python3 expand_stimuli.py --stages plan
 # smoke test: 3 shapes x 3 textures, one mode, fast and ugly
 python3 expand_stimuli.py --only-stems 1,2,3 --max-textures 3 --modes B_controlled_simple --res 256 --samples 8
-# full run (~45 s per grid cell at these settings; resumable, so re-run to continue)
+# GPU contrast preview on farmshare (separate --out so low-res cells do not block the full grid)
+srun -p gpu --gres=gpu:1 -c 8 --mem=32G -t 01:00:00 \
+  python3 expand_stimuli.py --out data/generated_stimuli/preview \
+  --only-stems 1,2,3 --max-textures 4 --res 512 --samples 64 --device OPTIX
+# full GPU run on farmshare (~L40S; resumable)
+sbatch --partition=gpu --gres=gpu:1 -c 16 --mem=64G -t 12:00:00 \
+  --wrap 'python3 expand_stimuli.py --res 1024 --samples 128 --device OPTIX'
+# CPU full run (~45 s per grid cell; resumable)
 python3 expand_stimuli.py --res 1024 --samples 128
 # shard the grid across machines, then assemble once everything is rendered
-python3 expand_stimuli.py --stages grid --only-stems 1,2,3,4,5 --res 1024 --samples 128
+python3 expand_stimuli.py --stages grid --only-stems 1,2,3,4,5 --res 1024 --samples 128 --device OPTIX
 # mirror the finished v1/v2 trees into the benchmark repo
 python3 expand_stimuli.py --stages sync --sync-to ../shapebias-bench-2/stimuli_pipe

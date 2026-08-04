@@ -5,6 +5,7 @@ data/generated_stimuli/
 # Matches both a real dir and a local convenience symlink.
 blender-*
 *.zip
+transcripts/
 
 # Python
 __pycache__/

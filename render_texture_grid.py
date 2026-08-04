@@ -13,6 +13,11 @@ byte-identical material. `reference` (shape S, texture T) and `texture_match`
 (shape S', texture T) therefore differ in shape alone, which is the invariant the
 2AFC design depends on.
 
+Each shape is turned about Z until its silhouette matches its ALICE photograph,
+so `reference` faces the same way as the `example_image` beside it. The angle is
+solved once per shape and reused for every texture, which keeps `reference` and
+`shape_match` in one pose.
+
 Cells already on disk are skipped, so an interrupted run resumes where it left off.
 
 Run through the Blender wrapper (this is a bpy script, not plain Python) -- normally
@@ -25,6 +30,7 @@ Env vars:
   STIM_GRID_PLAN           (required) JSON plan written by expand_stimuli.py
   STIM_RES                 square render resolution (default 1024)
   STIM_SAMPLES             Cycles samples (default 128)
+  STIM_CYCLES_DEVICE       CPU | OPTIX | CUDA | HIP | ONEAPI (default CPU)
   STIM_TEXTURE_LIBRARY     optional absolute path to texture sets
 """
 
@@ -53,8 +59,9 @@ def cell_path(grid_root: Path, mode: str, texture_set: str, stl_id: str) -> Path
     return grid_root / mode / texture_set / f"{stl_id}.png"
 
 
-def _prepare_shape(stl_path: Path):
+def _prepare_shape(shape: dict):
     """Import a shape and build the scene around it, ready for any material."""
+    stl_path = Path(shape["path"])
     scene.clear_scene()
     scene.bpy.ops.wm.stl_import(filepath=str(stl_path))
     selected = list(scene.bpy.context.selected_objects)
@@ -71,6 +78,12 @@ def _prepare_shape(stl_path: Path):
     triad._configure_stimulus_render_controls()
     obj.rotation_mode = "XYZ"
     obj.rotation_euler = (0.0, 0.0, 0.0)
+
+    photo = shape.get("photo") or ""
+    if photo and Path(photo).exists():
+        triad.pose_match_z(obj, stl_path, Path(photo))
+    else:
+        print(f"WARNING: no photograph for stl {shape['stl_id']}; pose left unmatched")
     return obj
 
 
@@ -123,7 +136,7 @@ def main() -> None:
             if not pending:
                 continue
 
-            obj = _prepare_shape(Path(shape["path"]))
+            obj = _prepare_shape(shape)
             if obj is None:
                 index += len(pending)
                 failed += len(pending)

@@ -207,7 +207,9 @@ def stage_plan(out: Path, stim_sets: dict, shapes: list[dict], textures: list[st
     plan = {
         "grid_root": str(grid_root),
         "modes": list(stim_sets.values()),
-        "shapes": shapes,
+        # The photograph travels with the shape: the grid renderer matches each
+        # render's pose to it so `reference` faces the way `example_image` does.
+        "shapes": [{**s, "photo": str(alice_photo(s["stl_id"]) or "")} for s in shapes],
         "textures": textures,
         "overwrite": overwrite,
     }
@@ -227,11 +229,12 @@ def stage_plan(out: Path, stim_sets: dict, shapes: list[dict], textures: list[st
     return plan_path
 
 
-def stage_grid(plan_path: Path, res: int, samples: int) -> None:
+def stage_grid(plan_path: Path, res: int, samples: int, device: str) -> None:
     _run_blender("render_texture_grid.py", {
         "STIM_GRID_PLAN": str(plan_path),
         "STIM_RES": str(res),
         "STIM_SAMPLES": str(samples),
+        "STIM_CYCLES_DEVICE": device,
         "STIM_USE_IMAGE_TEXTURES": "1",
     })
 
@@ -364,6 +367,9 @@ def main() -> None:
                     help="use only the first N texture sets (smoke tests)")
     ap.add_argument("--res", type=int, default=1024, help="square render resolution")
     ap.add_argument("--samples", type=int, default=128, help="Cycles samples")
+    ap.add_argument("--device", default="CPU",
+                    choices=["CPU", "OPTIX", "CUDA", "HIP", "ONEAPI"],
+                    help="Cycles device (use OPTIX on farmshare gpu/oat nodes)")
     ap.add_argument("--link-mode", default="hardlink", choices=["hardlink", "copy", "symlink"],
                     help="how grid cells are placed into packages (hardlink keeps one copy on disk)")
     ap.add_argument("--overwrite", action="store_true", help="re-render grid cells that exist")
@@ -403,7 +409,7 @@ def main() -> None:
 
     plan_path = stage_plan(out, stim_sets, shapes, textures, versions, args.overwrite)
     if "grid" in stages:
-        stage_grid(plan_path, args.res, args.samples)
+        stage_grid(plan_path, args.res, args.samples, args.device)
     if "assemble" in stages:
         stage_assemble(out, versions, stim_sets, shapes, textures, args.link_mode)
     if "manifest" in stages:

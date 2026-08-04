@@ -26,16 +26,22 @@ Env vars:
   STIM_MODE             B_controlled_simple | A_auto_contrast (default B)
   STIM_RES              square render resolution (default 1024)
   STIM_SAMPLES          Cycles samples (default 128)
+  STIM_CYCLES_DEVICE    CPU | OPTIX | CUDA | HIP | ONEAPI (default CPU)
   STIM_ONLY_STEMS       optional comma list to render a subset (e.g. 1,2,3)
   STIM_USE_IMAGE_TEXTURES  1/0 use PBR image textures (default 1)
   STIM_TEXTURE_LIBRARY  optional absolute path to texture sets (default data/texture_library)
+  STIM_REFERENCE_IMAGE_DIR  optional dir of <stem>.PNG photographs; when a shape
+                        has one, the render is turned to face the same way
 """
 
 import csv
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
+
+import numpy as np
 
 _PROJECT = Path(__file__).resolve().parent
 _SCRIPTS = _PROJECT / "scripts"
@@ -143,6 +149,49 @@ def _rebalance_lighting_soft(object_size: float) -> None:
         light_obj.rotation_euler = tuple(scene.radians(v) for v in rotation_deg)
 
 
+def _configure_cycles_device() -> None:
+    """Select Cycles CPU or GPU from STIM_CYCLES_DEVICE (default CPU)."""
+    raw = (os.environ.get("STIM_CYCLES_DEVICE", "CPU") or "CPU").strip().upper()
+    bpy = scene.bpy
+    scn = bpy.context.scene
+    scn.render.engine = "CYCLES"
+    cycles = scn.cycles
+
+    if raw in ("CPU", "NONE", ""):
+        cycles.device = "CPU"
+        print("cycles device: CPU")
+        return
+
+    prefs = bpy.context.preferences.addons["cycles"].preferences
+    try:
+        prefs.compute_device_type = raw
+    except TypeError:
+        print(f"WARNING: STIM_CYCLES_DEVICE={raw!r} unavailable; falling back to CPU")
+        cycles.device = "CPU"
+        return
+
+    prefs.get_devices()
+    enabled = []
+    for d in prefs.devices:
+        use = d.type == raw
+        d.use = use
+        if use:
+            enabled.append(d.name)
+
+    if not enabled:
+        print(f"WARNING: no {raw} devices found; falling back to CPU")
+        cycles.device = "CPU"
+        return
+
+    cycles.device = "GPU"
+    if raw == "OPTIX":
+        try:
+            cycles.denoiser = "OPTIX"
+        except TypeError:
+            pass
+    print(f"cycles device: GPU ({raw}) -> {', '.join(enabled)}")
+
+
 def _configure_stimulus_render_controls() -> None:
     render = scene.bpy.context.scene.render
     cycles = scene.bpy.context.scene.cycles
@@ -151,6 +200,134 @@ def _configure_stimulus_render_controls() -> None:
     render.resolution_x = res
     render.resolution_y = res
     cycles.samples = samples
+    _configure_cycles_device()
+
+
+# --------------------------------------------------------------------------- #
+# pose matching against a reference photograph
+# --------------------------------------------------------------------------- #
+POSE_STEP_COARSE = 30
+POSE_STEP_FINE = 5
+POSE_PROBE_RES = 256
+POSE_PROBE_SAMPLES = 8
+
+_pose_by_stl: dict[str, float] = {}
+
+
+def reference_photo(stem: str):
+    """Photograph fixing the orientation for `stem`, if one was supplied.
+
+    Off unless STIM_REFERENCE_IMAGE_DIR is set: shape pools are usually
+    procedural and have no photograph, and matching against an unrelated one
+    would be worse than leaving the pose alone.
+    """
+    root = os.environ.get("STIM_REFERENCE_IMAGE_DIR", "").strip()
+    if not root:
+        return None
+    base = Path(root)
+    if not base.is_absolute():
+        base = _PROJECT / base
+    for suffix in (".PNG", ".png"):
+        candidate = base / f"{stem}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _silhouette(path: Path, out_size: int = 128):
+    """Binary object mask from a PNG, cropped to the object and resampled.
+
+    Cropping to the bounding box means the score reflects the shape's outline
+    alone, so a photograph and a render can be compared even though the object
+    fills a different fraction of each frame.
+    """
+    img = scene.bpy.data.images.load(str(path), check_existing=False)
+    try:
+        width, height = int(img.size[0]), int(img.size[1])
+        px = np.empty(width * height * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+    finally:
+        scene.bpy.data.images.remove(img)
+
+    px = px.reshape(height, width, 4)
+    alpha = px[..., 3]
+    if alpha.max() > 0.1 and alpha.min() < 0.99:
+        mask = alpha > 0.08
+    else:
+        luma = px[..., :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+        corners = (luma[0, 0], luma[0, -1], luma[-1, 0], luma[-1, -1])
+        background = float(sum(float(c) for c in corners)) / 4.0
+        mask = np.abs(luma - background) > 0.08
+
+    rows, cols = np.nonzero(mask)
+    if rows.size == 0:
+        return np.zeros((out_size, out_size), dtype=bool)
+    cropped = mask[rows.min():rows.max() + 1, cols.min():cols.max() + 1]
+    row_idx = np.arange(out_size) * cropped.shape[0] // out_size
+    col_idx = np.arange(out_size) * cropped.shape[1] // out_size
+    return cropped[row_idx][:, col_idx]
+
+
+def _mask_iou(a, b) -> float:
+    union = int(np.count_nonzero(a | b))
+    return float(np.count_nonzero(a & b)) / union if union else 0.0
+
+
+def _best_z(obj, reference, degrees, probe_png: Path):
+    best_deg, best_score = 0.0, -1.0
+    for deg in degrees:
+        obj.rotation_euler = (0.0, 0.0, scene.radians(deg))
+        scene.render_still(str(probe_png))
+        score = _mask_iou(reference, _silhouette(probe_png))
+        if score > best_score:
+            best_deg, best_score = deg % 360.0, score
+    return best_deg, best_score
+
+
+def pose_match_z(obj, stl_path: Path, photo: Path) -> float:
+    """Rotate `obj` about Z so its outline matches the object's photograph.
+
+    The camera is fixed, so azimuth is the only free parameter: a coarse sweep
+    locates the facing and a fine sweep refines it. Probes render small and
+    noisy on purpose, since only the silhouette is read.
+
+    The angle is cached per mesh, so every variant of a shape is rendered in one
+    pose and `reference` and `shape_match` stay aligned.
+    """
+    key = str(stl_path)
+    if key in _pose_by_stl:
+        deg = _pose_by_stl[key]
+        obj.rotation_euler = (0.0, 0.0, scene.radians(deg))
+        return deg
+
+    render = scene.bpy.context.scene.render
+    cycles = scene.bpy.context.scene.cycles
+    previous = (render.resolution_x, render.resolution_y, cycles.samples,
+                render.film_transparent)
+    render.resolution_x = render.resolution_y = POSE_PROBE_RES
+    cycles.samples = POSE_PROBE_SAMPLES
+    render.film_transparent = True
+
+    probe_dir = Path(tempfile.mkdtemp(prefix=f"pose_{stl_path.stem}_"))
+    try:
+        reference = _silhouette(photo)
+        probe_png = probe_dir / "probe.png"
+        coarse_deg, coarse_score = _best_z(
+            obj, reference, range(0, 360, POSE_STEP_COARSE), probe_png)
+        half = POSE_STEP_COARSE // 2
+        fine = [coarse_deg + d for d in range(-half, half + 1, POSE_STEP_FINE) if d]
+        fine_deg, fine_score = _best_z(obj, reference, fine, probe_png)
+        best_deg, best_score = ((fine_deg, fine_score) if fine_score > coarse_score
+                                else (coarse_deg, coarse_score))
+    finally:
+        shutil.rmtree(probe_dir, ignore_errors=True)
+        (render.resolution_x, render.resolution_y, cycles.samples,
+         render.film_transparent) = previous
+
+    obj.rotation_euler = (0.0, 0.0, scene.radians(best_deg))
+    _pose_by_stl[key] = best_deg
+    print(f"[pose] stl={stl_path.stem} z={best_deg:.1f} deg IoU={best_score:.3f}")
+    return best_deg
 
 
 def _texture_preferences_for_mode(stimulus_mode: str):
@@ -182,6 +359,9 @@ def _render_variant_png(stl_path: Path, out_png: Path, *, seed: int, stimulus_mo
     _configure_stimulus_render_controls()
     obj.rotation_mode = "XYZ"
     obj.rotation_euler = (0.0, 0.0, 0.0)
+    photo = reference_photo(stl_path.stem)
+    if photo is not None:
+        pose_match_z(obj, stl_path, photo)
     mats.apply_material_stimulus_variant(obj, seed, stimulus_mode=stimulus_mode, variant_index=variant_index)
     scene.render_still(str(out_png))
     return True
